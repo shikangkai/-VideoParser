@@ -2,6 +2,7 @@ package com.holobor.main;
 
 import com.holobor.constants.Config;
 import com.holobor.infos.VideoInformation;
+import com.holobor.utils.Filer;
 import com.holobor.utils.VideoProcessor;
 
 import javax.imageio.ImageIO;
@@ -67,12 +68,12 @@ public class Main {
             if (root.length() < 32 * 1024) { return; }
             try {
                 String videoPath = root.getAbsolutePath();
-                if (!"mp4".equals(videoPath.substring(videoPath.lastIndexOf('.') + 1))) { return; }
+                if (!Filer.isMp4File(videoPath)) { return; }
                 VideoInformation videoInformation = VideoProcessor.processVideo(videoPath);
                 if (videoInformation == null) {
                     return;
                 }
-                File dstFile = new File(Config.SRC_WORKSPACE_VIDEO_DST_DIR, videoInformation.video.md5 + videoPath.substring(videoPath.lastIndexOf('.')));
+                File dstFile = new File(Config.SRC_WORKSPACE_VIDEO_DST_DIR, videoInformation.video.md5 + ".mp4");
                 if (dstFile.exists()) {
                     root.delete();
                 } else {
@@ -124,7 +125,8 @@ public class Main {
             }
 
             int index = 1;
-            for (File imgFile : img.listFiles()) {
+            File[] imageFiles = img.listFiles();
+            for (File imgFile : imageFiles) {
                 if (imgFile.getName().startsWith(".")) {
                     continue;
                 }
@@ -134,26 +136,26 @@ public class Main {
                     int w = image.getWidth(null);
                     int h = image.getHeight(null);
 
-                    int targetW = 400;
-                    int targetH = 400;
+                    int targetW = 320;
 
-                    float scale = 1f * w / targetW < 1f * h / targetH ?
-                            1f * w / targetW : 1f * h / targetH;
+                    float scale = 1f * w / targetW;
                     w = (int) (w / scale);
                     h = (int) (h / scale);
 
 
-                    BufferedImage bi = new BufferedImage(targetW, targetH, BufferedImage.TYPE_INT_RGB);
+                    BufferedImage bi = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
                     Graphics g = bi.getGraphics();
-                    g.drawImage(image, -(w - targetW) / 2, -(h - targetH) / 2, w, h, Color.LIGHT_GRAY, null);
+                    g.drawImage(image, 0, 0, w, h, Color.LIGHT_GRAY, null);
                     g.dispose();
                     String suffix = imgFile.getName().substring(imgFile.getName().lastIndexOf(".") + 1);
                     File thumbnailDir = new File(Config.SRC_WORKSPACE_IMAGE_THUMBNAIL_DIR + "/" + img.getName());
                     thumbnailDir.mkdirs();
-                    ImageIO.write(bi, suffix, new File(thumbnailDir, index + "." + suffix));
+                    String fileName = index + "." + suffix;
+                    ImageIO.write(bi, suffix, new File(thumbnailDir, fileName));
+                    imgFile.renameTo(new File(imgFile.getParent(), fileName));
                     index++;
-                    System.out.println(String.format("w=%d, h=%d", w, h));
-                } catch (IOException e) {
+                    System.out.println("process -> " + imgFile);
+                } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
