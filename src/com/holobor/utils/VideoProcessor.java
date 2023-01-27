@@ -32,9 +32,9 @@ public class VideoProcessor {
         }
 
         String title = Filer.getNameWithoutExtension(videoPath);
-        ResultSet resultSet = DatabaseHelper.query("select duration_ms from video where title = '" + title.replace('\'', '‘') + "'");
+        ResultSet resultSet = DatabaseHelper.query("select size_byte from video where title = '" + title.replace('\'', '‘') + "'");
         if (resultSet.next()) {
-            if (Math.abs(videoFileGrabber.getLengthInTime() / 1000L - resultSet.getLong(1)) < 1000L) {
+            if (Math.abs(videoFile.length() - resultSet.getLong(1)) < 1000L) {
                 System.out.println("file " + title + " already exist!!!");
                 File target = new File(Config.SRC_WORKSPACE_VIDEO_DUP_DIR, new File(videoPath).getName());
                 int prefixOrder = 1;
