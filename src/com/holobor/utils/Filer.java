@@ -16,4 +16,25 @@ public class Filer {
         File file = new File(filePath);
         return file.getName().substring(0, file.getName().lastIndexOf('.'));
     }
+
+    public static void deleteDir(File dir) {
+        if (!dir.isDirectory()) {
+            System.out.println(dir + " 不是文件夹，skip");
+            return;
+        }
+
+        File[] subFiles = dir.listFiles();
+        for (File subFile : subFiles) {
+            if (!subFile.delete()) {
+                System.out.println(subFile + " 文件删除失败，skip");
+                return;
+            }
+        }
+
+        if (!dir.delete()) {
+            System.out.println(dir + " 文件夹删除失败，skip");
+        } else {
+            System.out.println(dir + " 文件夹删除成功");
+        }
+    }
 }

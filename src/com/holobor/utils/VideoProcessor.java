@@ -32,25 +32,21 @@ public class VideoProcessor {
         }
 
         String title = Filer.getNameWithoutExtension(videoPath);
-        ResultSet resultSet = DatabaseHelper.query("select size_byte from video where title = '" + title.replace('\'', '‘') + "'");
-        if (resultSet.next()) {
-            if (Math.abs(videoFile.length() - resultSet.getLong(1)) < 1000L) {
-                System.out.println("file " + title + " already exist!!!");
-                File target = new File(Config.SRC_WORKSPACE_VIDEO_DUP_DIR, new File(videoPath).getName());
-                int prefixOrder = 1;
-                while (target.exists()); {
-                    target = new File(Config.SRC_WORKSPACE_VIDEO_DUP_DIR, String.format("%d-%s", prefixOrder, new File(videoPath).getName()));
-                    prefixOrder++;
-                }
-                new File(videoPath).renameTo(target);
-                throw new FileAlreadyExistsException(title);
-            }
-        }
+//        ResultSet resultSet = DatabaseHelper.query("select size_byte from video where title = '" + title.replace('\'', '‘') + "'");
+//        if (resultSet.next()) {
+//            if (Math.abs(videoFile.length() - resultSet.getLong(1)) < 1000L) {
+//                System.out.println("file " + title + " already exist!!! --->>>> " + videoFile);
+//                videoFileGrabber.stop();
+//                videoFileGrabber.release();
+//                throw new FileAlreadyExistsException(title);
+//            }
+//        }
         String videoFileMd5 = Md5Encoder.genFileMd5(videoPath);
 
         if (new File(Config.SRC_WORKSPACE_VIDEO_DST_DIR, videoFileMd5 + ".mp4").exists()) {
-            System.out.println("file " + videoFileMd5 + " already exist!!!");
-            new File(videoPath).renameTo(new File(Config.SRC_WORKSPACE_VIDEO_DUP_DIR, new File(videoPath).getName()));
+            System.out.println("file " + videoFileMd5 + " already exist!!! --->>>> " + videoFile);
+            videoFileGrabber.stop();
+            videoFileGrabber.release();
             throw new FileAlreadyExistsException(videoFileMd5);
         }
 

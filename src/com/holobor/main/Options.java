@@ -5,13 +5,20 @@ import com.holobor.helper.DatabaseHelper;
 import com.holobor.infos.VideoInformation;
 import com.holobor.utils.Filer;
 import com.holobor.utils.VideoProcessor;
+import com.sun.xml.internal.bind.v2.model.core.EnumLeafInfo;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Options {
 
@@ -44,6 +51,9 @@ public class Options {
                     root.renameTo(dstFile);
                 }
 //                needStop = true;
+            } catch (FileAlreadyExistsException e) {
+//                root.delete();
+                e.printStackTrace();
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
@@ -106,7 +116,7 @@ public class Options {
 
     public static void removeDeletedVideos() {
         try {
-            ResultSet resultSet = DatabaseHelper.query("select md5, name from video where deleted = 1");
+            ResultSet resultSet = DatabaseHelper.query("select md5, title from video where deleted = 1");
             while (resultSet.next()) {
                 String md5 = resultSet.getString(1);
                 File file = new File(Config.SRC_WORKSPACE_VIDEO_DST_DIR + md5 + ".mp4");
@@ -202,6 +212,44 @@ public class Options {
         }
     }
 
+    public static void batchRemoveEmojiChar(File srcDir) {
+        if (srcDir.isFile()) {
+            String fileName = srcDir.getName();
+            char[] chars = fileName.toCharArray();
+            boolean needRename = false;
+            for (int i = 0; i < chars.length; i++) {
+                if (chars[i] < 128) {
+                    continue;
+                }
+
+                if (chars[i] >= 0x4e00 && chars[i] <= 0x9ea5) {
+                    continue;
+                }
+
+                needRename = true;
+                chars[i] = '-';
+            }
+
+            Pattern emoji = Pattern.compile("[\u4e00-\u9ea5]",
+                    Pattern.UNICODE_CASE | Pattern.CASE_INSENSITIVE);
+            Matcher emojiMatcher = emoji.matcher(srcDir.getName());
+            if (needRename) {
+                srcDir.renameTo(new File(srcDir.getParentFile(), new String(chars)));
+            }
+            return;
+        }
+
+        File[] files = srcDir.listFiles();
+        if (files == null || files.length == 0) {
+            return;
+        }
+
+        for (File file : files) {
+            batchRemoveEmojiChar(file);
+        }
+    }
+
+
 
     public static void batchRename(File srcDir) {
         if (!srcDir.isDirectory()) {
@@ -247,7 +295,7 @@ public class Options {
                             : (prefix + "-" + index + fileName.substring(extensionIndex)) ;
                 }
 
-                subFile.renameTo(new File(subFile.getParentFile(), renameFileName));
+                subFile.renameTo(new File(Config.SRC_WORKSPACE_VIDEO_SRC_DIR, renameFileName));
                 index++;
             }
 
@@ -258,6 +306,123 @@ public class Options {
                 batchRename(renamedFile, prefix + "_" + subFile.getName());
                 index++;
             }
+        }
+    }
+
+    public static void listTagsAndMakeFolder() {
+        try {
+            System.out.println("\n\n当前数据库中的视频标签列表：\nTAG ID | TAG NAME\n---------------------------------");
+            ResultSet resultSet = DatabaseHelper.query("select id, name from tag order by name asc");
+            Map<Integer, String> tags = new HashMap<>();
+            while (resultSet.next()) {
+                tags.put(resultSet.getInt(1), resultSet.getString(2));
+                System.out.println(String.format("%6d | %s", resultSet.getInt(1), resultSet.getString(2)));
+            }
+
+            System.out.print("请输入需要导出视频的标签ID：");
+            Scanner scanner = new Scanner(System.in);
+            int tagId = scanner.nextInt();
+
+            System.out.print("导出的视频列表为：");
+            resultSet = DatabaseHelper.query("select B.md5, B.title from video_tag A left join video B on A.video_id = B.id where B.deleted = 0 AND A.tag_id = " + tagId);
+
+            String tagName = tags.get(tagId);
+            if (tagName == null) {
+                return;
+            }
+
+            // make dir
+            File dstDir = new File(Config.SRC_WORKSPACE_VIDEO_CATEGORY_DIR, tagName);
+            Filer.deleteDir(dstDir);
+            if (!dstDir.mkdirs()) {
+                System.out.println(dstDir + " 目录创建失败");
+                return;
+            }
+
+            while (resultSet.next()) {
+                String md5 = resultSet.getString(1);
+                String name = resultSet.getString(2);
+                System.out.println(String.format("[%s] %s", md5, name));
+                File src = new File(Config.SRC_WORKSPACE_VIDEO_DST_DIR, md5 + ".mp4");
+                File dst = new File(dstDir, name + "_" + md5 + ".mp4");
+
+                try {
+                    Files.copy(src.toPath(), dst.toPath());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        }
+    }
+
+    public static void tagDuplicatedVideos() {
+        try {
+            DatabaseHelper.executeSql("delete from video_tag where tag_id = 197");
+            ResultSet resultSet = DatabaseHelper.query("select id, duration_ms, width, height from video where deleted = 0 order by duration_ms desc");
+            HashMap<Long, LinkedList> durationIds = new HashMap<>();
+
+            int count = 0;
+            while (resultSet.next()) {
+                int id = resultSet.getInt(1);
+                long durationMs = resultSet.getLong(2);
+
+                LinkedList<Integer> ids = durationIds.get(durationMs);
+                if (ids == null) {
+                    ids = new LinkedList<>();
+                    durationIds.put(durationMs, ids);
+                }
+                ids.add(id);
+
+                count++;
+            }
+            resultSet.close();
+
+            System.out.println(String.format("共有视频%d个，时间不重复的共有%d个", count, durationIds.size()));
+            for (LinkedList<Integer> ids : durationIds.values()) {
+                if (ids.size() <= 1) {
+                    continue;
+                }
+
+                for (Integer id : ids) {
+                    DatabaseHelper.executeSql(String.format("insert into video_tag (`video_id`, `tag_id`) select %s, %s from dual where not exists (select id from video_tag where video_id = %s and tag_id = %s)", id, 197, id, 197)); // tagId=197
+                }
+            }
+        } catch (Throwable throwables) {
+            throwables.printStackTrace();
+        }
+    }
+
+    public static void tagVideosAutomatic() {
+        try {
+            DatabaseHelper.executeSql("delete from video_tag where tag_id = 169"); // 小于30秒
+            DatabaseHelper.executeSql("delete from video_tag where tag_id = 142"); // 大于1小时
+            DatabaseHelper.executeSql("delete from video_tag where tag_id = 153"); // 低清视频
+
+            ResultSet resultSet = DatabaseHelper.query("select id, duration_ms, width, height from video where deleted = 0");
+            Set<Integer> less30SecIds = new HashSet<>();
+            Set<Integer> more3600SecIds = new HashSet<>();
+            Set<Integer> lowDpiIds = new HashSet<>();
+            while (resultSet.next()) {
+                int id = resultSet.getInt(1);
+                long durationMs = resultSet.getLong(2);
+                int width = resultSet.getInt(3);
+                int height = resultSet.getInt(4);
+
+                if (durationMs < 30_000L) less30SecIds.add(id);
+                if (durationMs > 3600_000L) more3600SecIds.add(id);
+                if (Math.min(width, height) <= 320) lowDpiIds.add(id);
+            }
+            resultSet.close();
+
+            for (Integer id : less30SecIds) DatabaseHelper.executeSql(String.format("insert into video_tag (`video_id`, `tag_id`) select %s, %s from dual where not exists (select id from video_tag where video_id = %s and tag_id = %s)", id, 169, id, 169)); // tagId=169
+            for (Integer id : more3600SecIds) DatabaseHelper.executeSql(String.format("insert into video_tag (`video_id`, `tag_id`) select %s, %s from dual where not exists (select id from video_tag where video_id = %s and tag_id = %s)", id, 142, id, 142)); // tagId=142
+            for (Integer id : lowDpiIds) DatabaseHelper.executeSql(String.format("insert into video_tag (`video_id`, `tag_id`) select %s, %s from dual where not exists (select id from video_tag where video_id = %s and tag_id = %s)", id, 153, id, 153)); // tagId=153
+
+    } catch (Throwable throwables) {
+            throwables.printStackTrace();
         }
     }
 }
